@@ -7,3 +7,4 @@ chromadb
 fastapi
 uvicorn
 langchain-google-genai
+sentence-transformers
