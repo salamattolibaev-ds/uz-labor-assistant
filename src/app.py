@@ -2,8 +2,8 @@ import os
 from operator import itemgetter
 from dotenv import load_dotenv
 
-# Меняем Groq на Google Gemini
-from langchain_google_genai import ChatGoogleGenerativeAI 
+# Используем Groq для скорости и точности
+from langchain_groq import ChatGroq 
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -14,36 +14,44 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 load_dotenv()
 
-# 1. Инициализация базы
+# 1. Инициализация базы данных и эмбеддингов
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
-# Для Gemini можно оставить k=15, она легко справляется с таким объемом
+
+# k=15 позволяет модели видеть больше контекста для качественного сравнения
 retriever = db.as_retriever(search_type="similarity", search_kwargs={'k': 15})
 
-# 2. Инициализация Gemini 3 Flash
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash-latest", 
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0,
-    streaming=True
+# 2. Инициализация модели Groq (Llama 3 70B — идеальна для логических тестов)
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile", 
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0
 )
 
-# 3. Юридический промпт (Твой вариант с примером 5 > 3 — лучший!)
+# 3. Юридически защищенный промпт (Твоя обновленная версия)
 system_prompt = """Ты — экспертный юридический справочный ассистент по Трудовому кодексу Республики Узбекистан.
 
-⚠️ ДИСКЛЕЙМЕР: Ты не являешься адвокатом. Твои ответы носят справочный характер. 
-🛡️ АНОНИМНОСТЬ: Если в вопросе есть ФИО или названия компаний, напомни пользователю использовать вымышленные данные.
+⚠️ ДИСКЛЕЙМЕР: Ты не являешься адвокатом. Твои ответы носят исключительно информационный характер. Для принятия юридически значимых решений пользователю необходимо обратиться к квалифицированному юристу.
+
+ПРАВИЛА АНОНИМНОСТЬЮ:
+Если пользователь вводит личные данные (ФИО, ИНН, названия компаний), вежливо напомни в начале ответа, что в целях безопасности лучше использовать вымышленные имена.
 
 Инструкция для анализа:
 1. ФАКТЫ: Четко выпиши из вопроса даты, сроки, действия и участников.
-2. НОРМЫ: Процитируй или перескажи статьи из Контекста.
-3. СРАВНЕНИЕ (ЛОГИЧЕСКИЙ ТЕСТ): Сравни факты и нормы (Пример: 5 дней > 3 дня).
-4. ВЕРДИКТ: Сформулируй краткий итог.
+2. НОРМЫ: Процитируй или перескажи подходящие статьи из предоставленного Контекста.
+3. СРАВНЕНИЕ (ЛОГИЧЕСКИЙ ТЕСТ): Проведи прямое математическое или смысловое сравнение факта и нормы.
+4. ВЕРДИКТ: Сформулируй краткий и обоснованный итог.
 
-Контекст:
+ПРИМЕР ТВОЕЙ ЛОГИКИ:
+Вопрос: Прошло 5 дней с момента увольнения. Закон (ст. X) дает 3 дня на иск.
+Анализ: 5 дней (факт) > 3 дня (норма закона). 
+Результат: Срок обращения пропущен.
+
+Контекст для поиска:
 {context}
 
-[Источник: База данных ТК РУз]"""
+Теперь проанализируй вопрос пользователя ниже. 
+В конце обязательно укажи: [Источник: База данных ТК РУз]."""
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
@@ -51,12 +59,13 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}")
 ])
 
+# 4. Вспомогательные функции для RAG
 def format_docs(docs):
     found_articles = [str(doc.metadata.get('article_number', 'б/н')) for doc in docs]
-    print(f"\n📍 Ретривер извлек статьи: {', '.join(set(found_articles))}")
+    print(f"\n📍 Извлечены статьи для анализа: {', '.join(set(found_articles))}")
     return "\n\n".join(doc.page_content for doc in docs)
 
-# 4. Цепочка (Chain)
+# Цепочка обработки (LCEL)
 core_chain = (
     RunnablePassthrough.assign(
         context=itemgetter("question") | retriever | format_docs
@@ -66,6 +75,7 @@ core_chain = (
     | StrOutputParser()
 )
 
+# 5. Управление историей чата
 history_store = {}
 
 def get_session_history(session_id: str):
@@ -80,15 +90,16 @@ rag_with_history = RunnableWithMessageHistory(
     history_messages_key="history",
 )
 
-# 5. Функция запуска
+# 6. Функция запуска с прозрачностью интерфейса
 def start_bot():
     print("\n" + "="*50)
-    print("🏛️  LEGAL AI SYSTEM (Gemini 3 Flash) — УЗБЕКИСТАН")
+    print("🏛️  LEGAL AI SYSTEM (LCEL + 70B) — УЗБЕКИСТАН")
     print("="*50)
     print("🛡️  ПРАВОВАЯ ИНФОРМАЦИЯ И БЕЗОПАСНОСТЬ:")
-    print("1. Режим справочной системы.")
-    print("2. Данные на базе ТК РУз.")
-    print("3. БЕЗ РЕАЛЬНЫХ ПЕРСОНАЛЬНЫХ ДАННЫХ.")
+    print("1. Бот работает в режиме справочной системы.")
+    print("2. Ответы базируются на официальном Трудовом кодексе РУз.")
+    print("3. ПОЖАЛУЙСТА, НЕ ВВОДИТЕ РЕАЛЬНЫЕ ФИО И АДРЕСА.")
+    print("4. ИИ может ошибаться — всегда проверяйте важные выводы у юристов.")
     print("="*50)
 
     session_id = "default_user"
@@ -99,12 +110,12 @@ def start_bot():
             break
 
         if user_input.strip():
-            print("🔍 Поиск и анализ...")
+            print("🔍 Идет юридический анализ...")
             try:
                 config = {"configurable": {"session_id": session_id}}
-                print("\nОтвет: ", end="", flush=True)
+                print("\nАНАЛИЗ И ВЕРДИКТ:\n")
                 
-                # Streaming работает через Gemini так же отлично
+                # Потоковый вывод ответа (Streaming)
                 for chunk in rag_with_history.stream({"question": user_input}, config=config):
                     print(chunk, end="", flush=True)
                 print("\n" + "-"*30)

@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from .app import rag_with_history # Импортируем твою логику из app.py
+from app import rag_with_history # Импортируем твою логику из app.py
 
 app = FastAPI(title="Legal AI API (Uzbekistan)")
 
